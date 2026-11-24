@@ -1,5 +1,5 @@
 /* Offline: the app shell is saved at install; each chapter is saved the first time it is opened. Bump VERSION on every release. */
-const VERSION = "ss-v10-c7full-2026-11-24";
+const VERSION = "ss-v11-c7bhugol-art-2026-11-24";
 const FILES = ["./", "index.html", "app.css", "app.js", "manifest.webmanifest", "data/book.json", "data/c7/book.json", "icons/icon-192.png", "icons/icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
