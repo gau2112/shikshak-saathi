@@ -16,6 +16,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .top .xp{font-size:15px;background:var(--brand-soft);color:var(--brand);border-radius:20px;padding:4px 12px;font-weight:700;white-space:nowrap}
 .pad{padding:0 16px}
 /* home */
+.clspick{display:flex;gap:8px;margin:8px 16px 0}
+.clspick button{flex:1;padding:12px 8px;border-radius:14px;border:2px solid var(--line);background:var(--card);font-size:18px;font-weight:800;color:var(--muted)}
+.clspick button.on{border-color:#e8590c;background:#fff4e6;color:#e8590c}
 .hero{margin:8px 16px 16px;padding:22px 20px;border-radius:24px;background:linear-gradient(135deg,#e8590c,#f59f00);color:#fff}
 .hero h2{margin:0 0 4px;font-size:28px;line-height:1.25}
 .hero p{margin:0;font-size:17px;opacity:.95}

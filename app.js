@@ -3,8 +3,15 @@
   "use strict";
   var app = document.getElementById("app");
   var BOOK = null, CH = {};
-  var KEY = "ss6.v1";
+  /* which class: 6 (data/, progress "ss6.v1", unchanged since v1) or 7 (data/c7/, progress "ss7.v1") */
+  var qc = (location.search.match(/[?&]c=(6|7)\b/) || [])[1], CLS = 6;
+  try { if (qc) localStorage.setItem("ss.cls", qc); CLS = +localStorage.getItem("ss.cls") === 7 ? 7 : 6; } catch (e) {}
+  if (qc) CLS = +qc;
+  var KEY = CLS === 7 ? "ss7.v1" : "ss6.v1", DATA = CLS === 7 ? "data/c7/" : "data/";
   var st = load();
+  if (!st.name) { try { var o = JSON.parse(localStorage.getItem(CLS === 7 ? "ss6.v1" : "ss7.v1")) || {}; if (o.name) st.name = o.name; } catch (e) {} }
+  function setClass(k) { try { localStorage.setItem("ss.cls", String(k)); } catch (e) {} location.hash = "#/"; location.reload(); }
+  function lab(c) { return c.label != null ? c.label : c.no; }
 
   function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
@@ -45,8 +52,8 @@
 
   /* ---------------- data ---------------- */
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(u); return r.json(); }); }
-  function book() { return BOOK ? Promise.resolve(BOOK) : getJSON("data/book.json").then(function (b) { BOOK = b; return b; }); }
-  function chapter(n) { return CH[n] ? Promise.resolve(CH[n]) : getJSON("data/ch" + (n < 10 ? "0" : "") + n + ".json").then(function (c) { CH[n] = c; return c; }); }
+  function book() { return BOOK ? Promise.resolve(BOOK) : getJSON(DATA + "book.json").then(function (b) { BOOK = b; return b; }); }
+  function chapter(n) { return CH[n] ? Promise.resolve(CH[n]) : getJSON(DATA + "ch" + (n < 10 ? "0" : "") + n + ".json").then(function (c) { CH[n] = c; return c; }); }
   function doneCount(n) { var d = 0; Object.keys(st.done).forEach(function (k) { if (k.indexOf(n + ":c") === 0) d++; }); return d; }
   function chProgress(c) { var d = 0; c.concepts.forEach(function (k) { if (st.done[c.no + ":" + k.id]) d++; }); return d; }
 
@@ -71,7 +78,8 @@
       var hi = st.name ? "नमस्ते " + esc(st.name) + " जी! आज एक नई बात समझते हैं।" :
         'आपका नाम?<div class="namebox"><input id="nm" placeholder="जैसे: सुनीता" maxlength="30"><button id="nmok">ठीक</button></div>';
       var html = top("शिक्षक साथी") +
-        '<div class="hero"><h2>कक्षा 6 · सामाजिक विज्ञान</h2><p>' + esc(b.title) + '</p><div class="hi">' + hi + "</div></div>" +
+        '<div class="clspick">' + [6, 7].map(function (k) { return '<button data-cls="' + k + '" class="' + (k === CLS ? "on" : "") + '">कक्षा ' + k + "</button>"; }).join("") + "</div>" +
+        '<div class="hero"><h2>कक्षा ' + CLS + ' · सामाजिक विज्ञान</h2><p>' + esc(b.title) + '</p><div class="hi">' + hi + "</div></div>" +
         '';
       (function () {
         var lastPart = null;
@@ -79,15 +87,16 @@
           if (c.part && c.part !== lastPart) { lastPart = c.part; html += '<div class="sec-h">' + esc(c.part) + "</div>"; }
           if (c.live) {
             var d = doneCount(c.no), tot = c.concepts || 1;
-            html += '<button class="chap" data-go="#/ch/' + c.no + '/learn"><div class="no">' + c.no + '</div><div style="flex:1"><div class="t">' + esc(c.title) +
+            html += '<button class="chap" data-go="#/ch/' + c.no + '/learn"><div class="no">' + esc(lab(c)) + '</div><div style="flex:1"><div class="t">' + esc(c.title) +
               '</div><div class="s">' + esc(c.oneLine) + '</div><div class="bar"><i style="width:' + Math.round(100 * d / tot) + '%"></i></div></div></button>';
           } else {
-            html += '<div class="chap off"><div class="no">' + c.no + '</div><div><div class="t">' + esc(c.title) + '</div><div class="s">जल्द आ रहा है</div></div></div>';
+            html += '<div class="chap off"><div class="no">' + esc(lab(c)) + '</div><div><div class="t">' + esc(c.title) + '</div><div class="s">जल्द आ रहा है</div></div></div>';
           }
         });
         html += '<div class="tip">📲 <b>ऐप की तरह रखिए:</b> Chrome में ऊपर ⋮ दबाइए → <b>“होम स्क्रीन में जोड़ें”</b>। एक बार खोलने के बाद यह बिना इंटरनेट भी चलेगा।</div>' +
           '<div class="tip">🔊 हर पन्ने पर नीचे 🔊 बटन है। दबाइए, फ़ोन पढ़कर सुनाएगा।</div>';
         app.innerHTML = html;
+        $$("[data-cls]").forEach(function (x) { x.onclick = function () { var k = +x.getAttribute("data-cls"); if (k !== CLS) setClass(k); }; });
         var ok = $("#nmok");
         if (ok) ok.onclick = function () { var v = $("#nm").value.trim(); if (v) { st.name = v; save(); home(); } };
       })();
@@ -98,7 +107,7 @@
   function learn(n) {
     chapter(n).then(function (c) {
       var d = chProgress(c);
-      var html = top("पाठ " + c.no + ": " + c.title, "#/") +
+      var html = top("पाठ " + lab(c) + ": " + c.title, "#/") +
         '<div class="chead"><div class="one">' + esc(c.oneLine) + '</div><div class="small" style="margin-top:6px">✅ ' + d + " / " + c.concepts.length + " बातें समझ लीं</div></div>" +
         (c.map ? '<div class="mapcard"><div class="h">🗺️ पूरा पाठ एक नज़र में</div><div class="small">किसी डिब्बे को दबाइए, वही बात खुलेगी</div><div class="flbox">' +
           flowSVG(c.map, n, true) + '</div><a class="btn soft" href="#/ch/' + n + '/map">🔍 बड़ा करके देखिए</a></div>' : "") +
@@ -233,7 +242,7 @@
   function intro(n) {
     chapter(n).then(function (c) {
       player("यह पाठ क्यों?", "#/ch/" + n + "/learn", [
-        { html: '<div class="kicker">पाठ ' + c.no + '</div><div class="big-em">🎯</div><h2>' + esc(c.title) + '</h2><p class="lead">' + esc(c.oneLine) + "</p>" },
+        { html: '<div class="kicker">' + esc(c.book ? c.book + " · " : "") + 'पाठ ' + esc(lab(c)) + '</div><div class="big-em">🎯</div><h2>' + esc(c.title) + '</h2><p class="lead">' + esc(c.oneLine) + "</p>" },
         { html: '<div class="kicker">रोज़ की ज़िंदगी से</div><h2>यह पाठ क्यों पढ़ें?</h2><p class="lead">' + nl(c.why) + "</p>" },
         { html: '<div class="kicker">इस पाठ के बाद बच्चे…</div><h2>सीखने के लक्ष्य</h2>' + c.goals.map(function (g) { return '<div class="box">✔️ ' + esc(g) + "</div>"; }).join("") }
       ], function () { addXP(5, n + ":intro"); go("#/ch/" + n + "/learn"); });
@@ -375,7 +384,7 @@
   function mapPage(n) {
     chapter(n).then(function (c) {
       if (!c.map) return go("#/ch/" + n + "/learn");
-      app.innerHTML = top("पाठ " + n + ": नक्शा", "#/ch/" + n + "/learn") + '<div class="pad"><p class="small">किसी डिब्बे को दबाइए, वही बात खुलेगी। ✅ = समझ ली।</p><div class="flbox big">' +
+      app.innerHTML = top("पाठ " + lab(c) + ": नक्शा", "#/ch/" + n + "/learn") + '<div class="pad"><p class="small">किसी डिब्बे को दबाइए, वही बात खुलेगी। ✅ = समझ ली।</p><div class="flbox big">' +
         flowSVG(c.map, n, true) + '</div><div class="legend"><span class="lg r">पाठ</span><span class="lg g">हिस्सा</span><span class="lg c">बात (दबाइए)</span><span class="lg d">समझ ली</span></div></div>' + tabs(n, "learn");
     });
   }
