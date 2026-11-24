@@ -1,0 +1,419 @@
+/* शिक्षक साथी · phone app (no backend). Progress is kept on this phone (localStorage). */
+(function () {
+  "use strict";
+  var app = document.getElementById("app");
+  var BOOK = null, CH = {};
+  var KEY = "ss6.v1";
+  var st = load();
+
+  function load() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
+  st.done = st.done || {}; st.xp = st.xp || 0; st.best = st.best || {};
+  function addXP(n, key) { if (key && st.done[key]) return; if (key) st.done[key] = 1; st.xp += n; save(); }
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function nl(s) { return esc(s).replace(/\n/g, "<br>"); }
+  function $(sel, root) { return (root || app).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || app).querySelectorAll(sel)); }
+  function go(h) { location.hash = h; }
+
+  /* ---------------- read aloud (Hindi voice on the phone) ---------------- */
+  var voice = null, speaking = false;
+  function pickVoice() {
+    if (!("speechSynthesis" in window)) return;
+    var vs = speechSynthesis.getVoices();
+    voice = vs.filter(function (v) { return /^hi/i.test(v.lang); })[0] || null;
+  }
+  if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  function stopSpeak() { if ("speechSynthesis" in window) speechSynthesis.cancel(); speaking = false; var b = $(".say"); if (b) b.classList.remove("on"); }
+  function speak(text) {
+    if (!("speechSynthesis" in window)) { alert("इस फ़ोन में सुनाने की सुविधा नहीं है।"); return; }
+    if (speaking) { stopSpeak(); return; }
+    var clean = String(text).replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}]/gu, " ").replace(/[‘’“”]/g, "");
+    var u = new SpeechSynthesisUtterance(clean);
+    u.lang = "hi-IN"; if (voice) u.voice = voice; u.rate = 0.9;
+    u.onend = u.onerror = function () { speaking = false; var b = $(".say"); if (b) b.classList.remove("on"); };
+    speaking = true; var b = $(".say"); if (b) b.classList.add("on");
+    speechSynthesis.speak(u);
+    if (!voice && !st.voiceTold) { st.voiceTold = 1; save(); toast("हिंदी आवाज़ न आए तो: फ़ोन की Settings → Text-to-speech → Google → हिंदी डाउनलोड करें"); }
+  }
+  function toast(t) {
+    var d = document.createElement("div");
+    d.style.cssText = "position:fixed;left:12px;right:12px;bottom:96px;z-index:9;background:#1b2a3a;color:#fff;padding:12px 14px;border-radius:14px;font-size:16px;max-width:496px;margin:0 auto";
+    d.textContent = t; document.body.appendChild(d); setTimeout(function () { d.remove(); }, 5200);
+  }
+
+  /* ---------------- data ---------------- */
+  function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(u); return r.json(); }); }
+  function book() { return BOOK ? Promise.resolve(BOOK) : getJSON("data/book.json").then(function (b) { BOOK = b; return b; }); }
+  function chapter(n) { return CH[n] ? Promise.resolve(CH[n]) : getJSON("data/ch" + (n < 10 ? "0" : "") + n + ".json").then(function (c) { CH[n] = c; return c; }); }
+  function chProgress(c) { var d = 0; c.concepts.forEach(function (k) { if (st.done[c.no + ":" + k.id]) d++; }); return d; }
+
+  /* ---------------- shell pieces ---------------- */
+  function top(title, back) {
+    return '<div class="top">' + (back ? '<button class="back" aria-label="पीछे" data-go="' + back + '">←</button>' : "") +
+      "<h1>" + esc(title) + '</h1><span class="xp">⭐ ' + st.xp + "</span></div>";
+  }
+  function tabs(n, on) {
+    var t = [["learn", "📖", "सीखें"], ["class", "🧑‍🏫", "कक्षा में"], ["play", "🎮", "खेलें"], ["practice", "📝", "अभ्यास"]];
+    return '<nav class="tabs"><div class="in">' + t.map(function (x) {
+      return '<button class="' + (x[0] === on ? "on" : "") + '" data-go="#/ch/' + n + "/" + x[0] + '"><b>' + x[1] + "</b>" + x[2] + "</button>";
+    }).join("") + "</div></nav>";
+  }
+  app.addEventListener("click", function (e) {
+    var g = e.target.closest("[data-go]"); if (g) { stopSpeak(); go(g.getAttribute("data-go")); }
+  });
+
+  /* ---------------- home ---------------- */
+  function home() {
+    book().then(function (b) {
+      var hi = st.name ? "नमस्ते " + esc(st.name) + " जी! आज एक नई बात समझते हैं।" :
+        'आपका नाम?<div class="namebox"><input id="nm" placeholder="जैसे: सुनीता" maxlength="30"><button id="nmok">ठीक</button></div>';
+      var html = top("शिक्षक साथी") +
+        '<div class="hero"><h2>कक्षा 6 · सामाजिक विज्ञान</h2><p>' + esc(b.title) + '</p><div class="hi">' + hi + "</div></div>" +
+        '<div class="sec-h">पाठ चुनिए</div>';
+      Promise.all(b.chapters.filter(function (c) { return c.live; }).map(function (c) { return chapter(c.no); })).then(function () {
+        b.chapters.forEach(function (c) {
+          if (c.live) {
+            var d = chProgress(CH[c.no]), tot = CH[c.no].concepts.length;
+            html += '<button class="chap" data-go="#/ch/' + c.no + '/learn"><div class="no">' + c.no + '</div><div style="flex:1"><div class="t">' + esc(c.title) +
+              '</div><div class="s">' + esc(c.oneLine) + '</div><div class="bar"><i style="width:' + Math.round(100 * d / tot) + '%"></i></div></div></button>';
+          } else {
+            html += '<div class="chap off"><div class="no">' + c.no + '</div><div><div class="t">' + esc(c.title) + '</div><div class="s">जल्द आ रहा है</div></div></div>';
+          }
+        });
+        html += '<div class="tip">📲 <b>ऐप की तरह रखिए:</b> Chrome में ऊपर ⋮ दबाइए → <b>“होम स्क्रीन में जोड़ें”</b>। एक बार खोलने के बाद यह बिना इंटरनेट भी चलेगा।</div>' +
+          '<div class="tip">🔊 हर पन्ने पर नीचे 🔊 बटन है। दबाइए, फ़ोन पढ़कर सुनाएगा।</div>';
+        app.innerHTML = html;
+        var ok = $("#nmok");
+        if (ok) ok.onclick = function () { var v = $("#nm").value.trim(); if (v) { st.name = v; save(); home(); } };
+      });
+    });
+  }
+
+  /* ---------------- chapter: learn path ---------------- */
+  function learn(n) {
+    chapter(n).then(function (c) {
+      var d = chProgress(c);
+      var html = top("पाठ " + c.no + ": " + c.title, "#/") +
+        '<div class="chead"><div class="one">' + esc(c.oneLine) + '</div><div class="small" style="margin-top:6px">✅ ' + d + " / " + c.concepts.length + " बातें समझ लीं</div></div>" +
+        '<div class="path">' +
+        stone("#/ch/" + n + "/intro", "🎯", "यह पाठ क्यों?", "1 मिनट: पाठ एक नज़र में", st.done[n + ":intro"]) +
+        stone("#/ch/" + n + "/story", "📖", c.story.title, "शुरुआत की कहानी", st.done[n + ":story"]);
+      c.concepts.forEach(function (k, i) {
+        html += stone("#/ch/" + n + "/c/" + k.id, k.emoji, (i + 1) + ". " + k.name, k.widget ? "खुद करके देखिए वाली गतिविधि के साथ" : "2-3 मिनट", st.done[n + ":" + k.id]);
+      });
+      html += stone("#/ch/" + n + "/quiz", "🏆", "अंतिम परीक्षा", c.finalQuiz.length + " सवाल, फिर बैज " + (c.badge.emoji || ""), st.best[n] != null, "big") +
+        '</div><div class="pad"><div class="box gold"><div class="h">🧠 तीन बातें याद रखिए</div>' + c.remember.map(function (r, i) { return "<p>" + (i + 1) + ". " + esc(r) + "</p>"; }).join("") + "</div></div>";
+      app.innerHTML = html + tabs(n, "learn");
+    });
+  }
+  function stone(href, em, t, s, done, cls) {
+    return '<button class="stone ' + (done ? "done " : "") + (cls || "") + '" data-go="' + href + '"><span class="em">' + em + '</span><span><div class="t">' + esc(t) +
+      '</div><div class="s">' + esc(s) + '</div></span><span class="ck">' + (done ? "✅" : "›") + "</span></button>";
+  }
+
+  /* ---------------- generic step player ---------------- */
+  // screens: [{html, say, gate:bool, onShow(el, unlock)}]
+  function player(title, back, screens, onEnd) {
+    var i = Math.min(+(new URLSearchParams(location.search).get("step") || 0), screens.length - 1); // ?step=N for testing
+    function draw() {
+      stopSpeak();
+      var s = screens[i];
+      app.innerHTML = top(title, back) + '<div class="player"><div class="prog"><i style="width:' + Math.round(100 * (i + 1) / screens.length) + '%"></i></div>' +
+        '<div class="screen">' + s.html + "</div></div>" +
+        '<div class="nav"><div class="in"><button class="prev" aria-label="पीछे"' + (i ? "" : " disabled") + '>◀</button><button class="say" aria-label="सुनिए">🔊</button>' +
+        '<button class="next">' + (i === screens.length - 1 ? "पूरा ✓" : "आगे ▶") + "</button></div></div>";
+      var next = $(".next");
+      if (s.gate) next.disabled = true;
+      $(".prev").onclick = function () { if (i) { i--; draw(); } };
+      $(".say").onclick = function () { speak(s.say || $(".screen").innerText); };
+      next.onclick = function () { if (i < screens.length - 1) { i++; draw(); window.scrollTo(0, 0); } else { stopSpeak(); onEnd(); } };
+      if (s.onShow) s.onShow($(".screen"), function () { next.disabled = false; });
+      bindReveal($(".screen"));
+    }
+    var sx = null;
+    app.ontouchstart = function (e) { sx = e.touches[0].clientX; };
+    app.ontouchend = function (e) {
+      if (sx == null || !$(".player")) return; var dx = e.changedTouches[0].clientX - sx; sx = null;
+      if (e.target.closest("input,.rose,.grid")) return;
+      if (dx < -70 && !$(".next").disabled) $(".next").click(); else if (dx > 70) $(".prev").click();
+    };
+    draw();
+  }
+  function bindReveal(root) {
+    $$("[data-reveal]", root).forEach(function (b) {
+      b.onclick = function () { var t = root.querySelector("#" + b.getAttribute("data-reveal")); if (t) { t.hidden = false; b.remove(); } };
+    });
+  }
+  function quizScreen(q, kicker, onAnswer) {
+    var html = '<div class="kicker">' + kicker + "</div><h2>" + esc(q.q) + '</h2><div class="opts">' +
+      q.options.map(function (o, j) { return '<button class="opt" data-j="' + j + '">' + esc(o) + "</button>"; }).join("") + '</div><div id="why"></div>';
+    return {
+      html: html, gate: true, say: q.q + "। " + q.options.join("। "),
+      onShow: function (el, unlock) {
+        $$(".opt", el).forEach(function (b) {
+          b.onclick = function () {
+            var j = +b.getAttribute("data-j"), right = j === q.answer;
+            $$(".opt", el).forEach(function (x) { x.disabled = true; if (+x.getAttribute("data-j") === q.answer) x.classList.add("right"); });
+            if (!right) b.classList.add("wrong");
+            el.querySelector("#why").innerHTML = '<div class="box ' + (right ? "ok" : "bad") + '"><div class="h">' + (right ? "✅ सही!" : "❌ यह नहीं। सही उत्तर हरे रंग में है।") + "</div>" + nl(q.why) + "</div>";
+            if (onAnswer) onAnswer(right);
+            unlock();
+          };
+        });
+      }
+    };
+  }
+
+  /* ---------------- intro + story ---------------- */
+  function intro(n) {
+    chapter(n).then(function (c) {
+      player("यह पाठ क्यों?", "#/ch/" + n + "/learn", [
+        { html: '<div class="kicker">पाठ ' + c.no + '</div><div class="big-em">🎯</div><h2>' + esc(c.title) + '</h2><p class="lead">' + esc(c.oneLine) + "</p>" },
+        { html: '<div class="kicker">रोज़ की ज़िंदगी से</div><h2>यह पाठ क्यों पढ़ें?</h2><p class="lead">' + nl(c.why) + "</p>" },
+        { html: '<div class="kicker">इस पाठ के बाद बच्चे…</div><h2>सीखने के लक्ष्य</h2>' + c.goals.map(function (g) { return '<div class="box">✔️ ' + esc(g) + "</div>"; }).join("") }
+      ], function () { addXP(5, n + ":intro"); go("#/ch/" + n + "/learn"); });
+    });
+  }
+  function story(n) {
+    chapter(n).then(function (c) {
+      var sc = c.story.paras.map(function (p, i) {
+        return { html: (i ? "" : '<div class="kicker">कहानी</div><h2>' + esc(c.story.title) + "</h2>") + '<p class="lead">' + nl(p) + "</p>" };
+      });
+      player("कहानी", "#/ch/" + n + "/learn", sc, function () { addXP(5, n + ":story"); go("#/ch/" + n + "/learn"); });
+    });
+  }
+
+  /* ---------------- one concept, step by step ---------------- */
+  function concept(n, id) {
+    chapter(n).then(function (c) {
+      var idx = c.concepts.findIndex(function (k) { return k.id === id; }), k = c.concepts[idx];
+      if (!k) return go("#/ch/" + n + "/learn");
+      var sc = [];
+      sc.push({ html: '<div class="kicker">बात ' + (idx + 1) + " / " + c.concepts.length + "</div><h2>" + k.emoji + " " + esc(k.name) + "</h2>" +
+        (k.art ? '<div class="art">' + k.art + "</div>" : "") + '<p class="lead">' + nl(k.simple) + "</p>", say: k.name + "। " + k.simple });
+      if (k.widget && WIDGETS[k.widget]) sc.push({ html: '<div class="kicker">खुद करके देखिए</div>' + WIDGETS[k.widget].html, say: WIDGETS[k.widget].say, onShow: WIDGETS[k.widget].init });
+      if (k.like) sc.push({ html: '<div class="kicker">ऐसे समझिए</div><div class="box blue"><div class="h">🤝 जैसे…</div>' + nl(k.like) + "</div>" +
+        (k.careful ? '<div class="box gold"><div class="h">⚠️ पर ध्यान दें</div>' + nl(k.careful) + "</div>" : "") +
+        (k.life ? '<div class="box"><div class="h">🏡 रोज़ की ज़िंदगी से</div>' + nl(k.life) + "</div>" : ""), say: [k.like, k.careful, k.life].join("। ") });
+      sc.push({ html: '<div class="kicker">थोड़ा और गहराई से</div><h2>आप पक्का समझ लीजिए</h2><p>' + nl(k.detail) + "</p>" +
+        (k.book ? '<button class="reveal" data-reveal="bk">📗 किताब क्या कहती है? (दबाइए)</button><div id="bk" hidden class="box">' + nl(k.book) + "</div>" : ""), say: k.detail });
+      if (k.myth && k.myth.galat) sc.push({ html: '<div class="kicker">आम गलतफ़हमी</div><div class="box bad"><div class="h">❌ बहुत लोग सोचते हैं</div>' + nl(k.myth.galat) + "</div>" +
+        '<button class="reveal" data-reveal="mt">✅ असल में सही क्या है? (दबाइए)</button><div id="mt" hidden class="box ok"><div class="h">✅ सही बात</div>' + nl(k.myth.sahi) + "</div>",
+        say: "बहुत लोग सोचते हैं: " + k.myth.galat + "। पर सही बात: " + k.myth.sahi });
+      if (k.kidsAsk && k.kidsAsk.length) sc.push({ html: '<div class="kicker">बच्चे पूछें तो</div><h2>ऐसे जवाब दीजिए</h2>' + k.kidsAsk.map(function (x, j) {
+        return '<div class="qa"><div class="box"><div class="q">🙋 ' + esc(x.q) + '</div></div><button class="reveal" data-reveal="ka' + j + '">जवाब देखिए</button><div id="ka' + j + '" hidden class="box ok">' + nl(x.a) + "</div></div>";
+      }).join(""), say: k.kidsAsk.map(function (x) { return x.q + " " + x.a; }).join("। ") });
+      if (k.trick) sc.push({ html: '<div class="kicker">याद रखने की ट्रिक</div><div class="big-em">💡</div><p class="lead"><b>' + nl(k.trick) + "</b></p>", say: k.trick });
+      if (k.quiz && k.quiz.q) sc.push(quizScreen(k.quiz, "छोटी परीक्षा"));
+      var nextK = c.concepts[idx + 1];
+      sc.push({ html: '<div class="badge"><div class="em">🌟</div><h2>शाबाश! यह बात पक्की हुई</h2><p class="lead">+10 ⭐</p></div>' +
+        '<a class="btn soft" href="#/ch/' + n + "/class/" + k.id + '">🧑‍🏫 कक्षा में यह कैसे पढ़ाएँ</a>' +
+        (nextK ? '<a class="btn" href="#/ch/' + n + "/c/" + nextK.id + '">अगली बात: ' + esc(nextK.name) + " ▶</a>" : '<a class="btn" href="#/ch/' + n + '/quiz">🏆 अंतिम परीक्षा दीजिए</a>'),
+        onShow: function () { addXP(10, n + ":" + k.id); } });
+      player(k.emoji + " " + k.name, "#/ch/" + n + "/learn", sc, function () { go(nextK ? "#/ch/" + n + "/c/" + nextK.id : "#/ch/" + n + "/learn"); });
+    });
+  }
+
+  /* ---------------- final quiz ---------------- */
+  function finalQuiz(n) {
+    chapter(n).then(function (c) {
+      var score = 0, sc = c.finalQuiz.map(function (q, i) { return quizScreen(q, "सवाल " + (i + 1) + " / " + c.finalQuiz.length, function (ok) { if (ok) score++; }); });
+      sc.push({ html: '<div id="res"></div>', onShow: function (el) {
+        var pass = score >= Math.ceil(c.finalQuiz.length * 0.7);
+        st.best[n] = Math.max(st.best[n] || 0, score); if (pass) addXP(50, n + ":badge"); save();
+        el.querySelector("#res").innerHTML = '<div class="score">' + score + " / " + c.finalQuiz.length + "</div>" +
+          (pass ? '<div class="badge"><div class="em">' + esc(c.badge.emoji) + '</div><h2>बैज मिला: ' + esc(c.badge.naam) + '</h2><p>' + esc(c.badge.vivran) + "</p></div>"
+                : '<div class="box gold">7 या ज़्यादा सही होने पर बैज मिलेगा। जो सवाल गलत हुए, वे बातें दोबारा देख लीजिए, फिर परीक्षा दोबारा दीजिए।</div>') +
+          '<a class="btn soft" href="#/ch/' + n + '/learn">पाठ पर वापस</a>';
+      } });
+      player("अंतिम परीक्षा", "#/ch/" + n + "/learn", sc, function () { go("#/ch/" + n + "/learn"); });
+    });
+  }
+
+  /* ---------------- class tab ---------------- */
+  function classList(n) {
+    chapter(n).then(function (c) {
+      var p = c.prep || {};
+      var html = top("कक्षा में पढ़ाइए", "#/") + '<div class="pad"><div class="box blue"><div class="h">🎒 पढ़ाने से पहले (' + esc(p.samay || "") + ")</div>" +
+        (p.saman || []).map(function (s) { return "• " + esc(s); }).join("<br>") + "</div><p class=\"small\">हर बात के लिए: कक्षा में क्या बोलें, बच्चे क्या कहेंगे, बोर्ड पर क्या लिखें, और बच्चों से क्या पूछें।</p></div><div class=\"path\">";
+      c.concepts.forEach(function (k, i) { html += stone("#/ch/" + n + "/class/" + k.id, k.emoji, (i + 1) + ". " + k.name, "कक्षा की स्क्रिप्ट", false); });
+      if (c.homework && c.homework.length) html += '</div><div class="pad"><div class="box gold"><div class="h">🏠 गृहकार्य</div>' + c.homework.map(function (h) { return "• " + esc(h); }).join("<br>") + "</div></div>";
+      else html += "</div>";
+      app.innerHTML = html + tabs(n, "class");
+    });
+  }
+  function classOne(n, id) {
+    chapter(n).then(function (c) {
+      var k = c.concepts.filter(function (x) { return x.id === id; })[0]; if (!k) return go("#/ch/" + n + "/class");
+      var who = { "शिक्षक": "b-t", "बच्चे": "b-k", "करें": "b-d" };
+      var html = top(k.emoji + " " + k.name, "#/ch/" + n + "/class") + '<div class="pad"><div class="kicker">कक्षा में ऐसे बोलिए</div>' +
+        k.script.map(function (s) { return '<div class="bubble ' + (who[s.kaun] || "b-d") + '"><span class="w">' + esc(s.kaun === "करें" ? "✋ आप करें" : s.kaun) + "</span>" + nl(s.text) + "</div>"; }).join("") +
+        (k.board ? '<div class="kicker" style="margin-top:16px">ब्लैकबोर्ड पर</div><div class="board">' + esc(k.board) + "</div>" : "") +
+        (k.askKids.length ? '<div class="kicker" style="margin-top:16px">बच्चों से पूछिए</div>' + k.askKids.map(function (x, j) {
+          return '<div class="box"><div class="q"><b>❓ ' + esc(x.q) + '</b></div><button class="reveal" style="margin:8px 0 0" data-reveal="ak' + j + '">संभावित उत्तर</button><div id="ak' + j + '" hidden>✅ ' + nl(x.a) + "</div></div>";
+        }).join("") : "") +
+        '<a class="btn soft" href="#/ch/' + n + "/c/" + k.id + '">📖 पहले खुद समझिए</a></div>';
+      app.innerHTML = html; bindReveal(app);
+    });
+  }
+
+  /* ---------------- play tab ---------------- */
+  function playList(n) {
+    chapter(n).then(function (c) {
+      app.innerHTML = top("खेलें", "#/") + '<div class="path">' +
+        stone("#/ch/" + n + "/play/tf", "⚡", "झटपट सही या गलत", c.trueFalse.length + " बातें, एक-एक करके", false) +
+        stone("#/ch/" + n + "/play/words", "🃏", "शब्द कार्ड", c.words.length + " नए शब्द, पलटकर अर्थ देखिए", false) +
+        stone("#/ch/" + n + "/play/riddles", "🗝️", "पहेलियाँ", c.riddles.length + " पहेलियाँ बूझिए", false) +
+        '</div><div class="pad"><div class="tip">ये खेल कक्षा में भी खिलाइए: फ़ोन पर बात पढ़िए, बच्चे “सही” हो तो खड़े हों, “गलत” हो तो बैठें।</div></div>' + tabs(n, "play");
+    });
+  }
+  function playTF(n) {
+    chapter(n).then(function (c) {
+      var score = 0;
+      var sc = c.trueFalse.map(function (x, i) {
+        return { gate: true, say: x.t, html: '<div class="kicker">⚡ ' + (i + 1) + " / " + c.trueFalse.length + '</div><div class="box tf">' + esc(x.t) + '</div><div class="tfbtns"><button class="y">✅ सही</button><button class="n">❌ गलत</button></div><div id="fb"></div>',
+          onShow: function (el, unlock) {
+            function ans(v) { var ok = v === x.ok; if (ok) score++; $$(".tfbtns button", el).forEach(function (b) { b.disabled = true; });
+              el.querySelector("#fb").innerHTML = '<div class="box ' + (ok ? "ok" : "bad") + '" style="margin-top:12px"><div class="h">' + (ok ? "✅ बिल्कुल!" : "❌ उलटा है। यह बात " + (x.ok ? "सही" : "गलत") + " है।") + "</div>" + nl(x.why) + "</div>"; unlock(); }
+            el.querySelector(".y").onclick = function () { ans(true); }; el.querySelector(".n").onclick = function () { ans(false); };
+          } };
+      });
+      sc.push({ html: '<div id="r"></div>', onShow: function (el) { addXP(15, n + ":tf"); el.querySelector("#r").innerHTML = '<div class="score">' + score + " / " + c.trueFalse.length + '</div><a class="btn soft" href="#/ch/' + n + '/play">और खेल</a>'; } });
+      player("झटपट सही या गलत", "#/ch/" + n + "/play", sc, function () { go("#/ch/" + n + "/play"); });
+    });
+  }
+  function playWords(n) {
+    chapter(n).then(function (c) {
+      var sc = c.words.map(function (w, i) {
+        return { say: w.w + "। " + w.m + "। " + w.e, html: '<div class="kicker">🃏 ' + (i + 1) + " / " + c.words.length + ' · दबाकर पलटिए</div><div class="flip"><div class="card"><div class="f">' + esc(w.w) +
+          '<div class="small" style="font-weight:400;margin-top:10px">अर्थ देखने के लिए दबाइए</div></div><div class="b"><b>' + esc(w.m) + "</b><p class=\"small\" style=\"margin-top:10px\">जैसे: " + esc(w.e) + "</p></div></div></div>",
+          onShow: function (el) { el.querySelector(".flip").onclick = function () { this.classList.toggle("on"); }; } };
+      });
+      player("शब्द कार्ड", "#/ch/" + n + "/play", sc, function () { addXP(10, n + ":words"); go("#/ch/" + n + "/play"); });
+    });
+  }
+  function playRiddles(n) {
+    chapter(n).then(function (c) {
+      var sc = c.riddles.map(function (r, i) {
+        return { say: r.r, html: '<div class="kicker">🗝️ पहेली ' + (i + 1) + '</div><div class="box gold lead" style="white-space:pre-line">' + esc(r.r) + "</div>" +
+          '<button class="reveal" data-reveal="h' + i + '">🤔 संकेत</button><div id="h' + i + '" hidden class="box">' + esc(r.hint) + "</div>" +
+          '<button class="reveal" data-reveal="a' + i + '">🔓 उत्तर</button><div id="a' + i + '" hidden class="box ok lead"><b>' + esc(r.a) + "</b></div>" };
+      });
+      player("पहेलियाँ", "#/ch/" + n + "/play", sc, function () { addXP(10, n + ":riddles"); go("#/ch/" + n + "/play"); });
+    });
+  }
+
+  /* ---------------- practice tab ---------------- */
+  function practice(n) {
+    chapter(n).then(function (c) {
+      app.innerHTML = top("किताब के अभ्यास", "#/") + '<div class="pad"><p class="small">किताब के सवाल, आसान उत्तर के साथ। पहले खुद सोचिए, फिर “उत्तर देखिए” दबाइए।</p>' +
+        c.practice.map(function (x, i) {
+          return '<div class="box"><div><b>' + (i + 1) + ". " + nl(x.q) + '</b></div><button class="reveal" style="margin:10px 0 0" data-reveal="p' + i + '">उत्तर देखिए</button><div id="p' + i + '" hidden style="margin-top:10px">' +
+            '<div class="box ok">' + nl(x.a) + "</div>" + (x.how ? '<div class="box blue"><div class="h">🧑‍🏫 बच्चों को ऐसे समझाइए</div>' + nl(x.how) + "</div>" : "") + "</div></div>";
+        }).join("") + "</div>" + tabs(n, "practice");
+      bindReveal(app);
+    });
+  }
+
+  /* ---------------- hands-on widgets ---------------- */
+  var DIRS = [["उत्तर", 0], ["उत्तर-पूर्व", 45], ["पूर्व", 90], ["दक्षिण-पूर्व", 135], ["दक्षिण", 180], ["दक्षिण-पश्चिम", 225], ["पश्चिम", 270], ["उत्तर-पश्चिम", 315]];
+  function rounds(el, total, ask, check, end) {
+    var r = 0, sc = 0;
+    function nextQ() { if (r >= total) { end(sc); return; } ask(r); }
+    check(function (ok) { r++; if (ok) sc++; setTimeout(nextQ, 900); });
+    nextQ();
+  }
+  var WIDGETS = {
+    compass: {
+      say: "दिशा का खेल। फ़ोन जो दिशा बोले, उस पर उँगली रखिए।",
+      html: '<h2>🧭 दिशा पहचानिए</h2><div class="wg"><div class="ask" id="ask"></div><div class="rose">' +
+        DIRS.map(function (d) { var a = (d[1] - 90) * Math.PI / 180, x = 140 + 118 * Math.cos(a), y = 140 + 118 * Math.sin(a);
+          return '<button data-d="' + d[0] + '" style="left:' + x + "px;top:" + y + 'px">' + d[0].replace("-", "-<br>") + "</button>"; }).join("") +
+        '<div class="c">☀️</div></div><div class="fb" id="fb"></div><p class="small">याद रखिए: सुबह सूरज जिधर से निकलता है, वह पूर्व।</p></div>',
+      init: function (el, unlock) {
+        var want = "";
+        rounds(el, 6, function () { want = DIRS[Math.floor(Math.random() * 8)][0]; el.querySelector("#ask").textContent = "👉 " + want + " पर टैप कीजिए";
+          $$(".rose button", el).forEach(function (b) { b.className = ""; }); el.querySelector("#fb").textContent = ""; },
+          function (done) { $$(".rose button", el).forEach(function (b) { b.onclick = function () { var ok = b.getAttribute("data-d") === want; b.className = ok ? "right" : "wrong";
+            el.querySelector("#fb").textContent = ok ? "✅ सही!" : "❌ यह " + b.getAttribute("data-d") + " है"; done(ok); }; }); },
+          function (s) { el.querySelector("#ask").textContent = "🎉 6 में से " + s + " सही!"; unlock(); });
+      }
+    },
+    scale: {
+      say: "स्केल का खेल। नक्शे की दूरी और स्केल बदलिए, असली दूरी देखिए।",
+      html: '<h2>📏 नक्शे की दूरी → असली दूरी</h2><div class="wg"><div class="small">स्केल चुनिए</div><div class="seg" id="sc">' +
+        [1, 2, 5, 10].map(function (k, i) { return '<button data-k="' + k + '" class="' + (i ? "" : "on") + '">1 सेमी = ' + k + " किमी</button>"; }).join("") +
+        '</div><div class="small">नक्शे पर दूरी: <b id="cmv">4</b> सेमी</div><input type="range" id="cm" min="1" max="10" value="4"><div class="mapline" id="ml"></div><div class="out" id="out"></div>' +
+        '<p class="small">तरीका: नक्शे की दूरी × स्केल = असली दूरी</p></div>',
+      init: function (el, unlock) {
+        var k = 1, cm = el.querySelector("#cm");
+        function upd() { var v = +cm.value; el.querySelector("#cmv").textContent = v; el.querySelector("#ml").style.width = (v * 9) + "%";
+          el.querySelector("#out").textContent = v + " × " + k + " = " + (v * k) + " किमी असली दूरी"; unlock(); }
+        cm.oninput = upd;
+        $$("#sc button", el).forEach(function (b) { b.onclick = function () { $$("#sc button", el).forEach(function (x) { x.classList.remove("on"); }); b.classList.add("on"); k = +b.getAttribute("data-k"); upd(); }; });
+        upd();
+      }
+    },
+    grid: {
+      say: "लाइन और कॉलम का खेल। फ़ोन जो खाना बोले, उस पर टैप कीजिए।",
+      html: '<h2>🔢 खाना ढूँढिए</h2><div class="wg"><div class="ask" id="ask"></div><div class="grid" id="g"></div><div class="fb" id="fb"></div>' +
+        '<p class="small">पहले ऊपर वाला अक्षर (कॉलम), फिर बाएँ वाली गिनती (लाइन)। अक्षांश-देशांतर भी ऐसे ही पता बताते हैं।</p></div>',
+      init: function (el, unlock) {
+        var C = ["क", "ख", "ग", "घ"], g = el.querySelector("#g"), want = "", h = "<div></div>";
+        C.forEach(function (x) { h += "<div>" + x + "</div>"; });
+        for (var r = 1; r <= 4; r++) { h += "<div>" + r + "</div>"; C.forEach(function (x) { h += '<button data-c="' + x + " " + r + '"></button>'; }); }
+        g.innerHTML = h;
+        rounds(el, 5, function () { want = C[Math.floor(Math.random() * 4)] + " " + (1 + Math.floor(Math.random() * 4));
+          el.querySelector("#ask").textContent = "👉 खाना " + want + " पर ⭐ रखिए"; $$("#g button", el).forEach(function (b) { b.className = ""; b.textContent = ""; }); el.querySelector("#fb").textContent = ""; },
+          function (done) { $$("#g button", el).forEach(function (b) { b.onclick = function () { var ok = b.getAttribute("data-c") === want; b.className = ok ? "right" : "wrong"; b.textContent = ok ? "⭐" : "✗";
+            el.querySelector("#fb").textContent = ok ? "✅ सही पता!" : "❌ यह खाना " + b.getAttribute("data-c") + " है"; done(ok); }; }); },
+          function (s) { el.querySelector("#ask").textContent = "🎉 5 में से " + s + " सही!"; unlock(); });
+      }
+    },
+    clock: {
+      say: "समय का खेल। स्लाइडर से देशांतर बदलिए, देखिए वहाँ घड़ी में क्या बजा है, जब ग्रिनिच में दोपहर के बारह बजे हैं।",
+      html: '<h2>🕛 जगह बदलिए, समय देखिए</h2><div class="wg"><div class="small" style="text-align:center">ग्रिनिच (0°) पर अभी दोपहर 12:00 बजे हैं</div>' +
+        '<div class="seg" id="pl"><button data-l="0">ग्रिनिच 0°</button><button data-l="82.5">भारत IST 82½° पू.</button><button data-l="77">दिल्ली 77° पू.</button><button data-l="140">टोक्यो 140° पू.</button><button data-l="-74">न्यूयॉर्क 74° प.</button></div>' +
+        '<input type="range" id="lon" min="-180" max="180" step="7.5" value="82.5"><div class="out" id="lonv"></div><div class="clock"><div>ग्रिनिच<b>12:00</b>दोपहर</div><div id="loc"></div></div>' +
+        '<div class="box gold" id="why" style="margin-top:10px"></div></div>',
+      init: function (el, unlock) {
+        var lon = el.querySelector("#lon");
+        function part(h) { return h >= 4 && h < 12 ? "सुबह" : h < 16 ? "दोपहर" : h < 19 ? "शाम" : "रात"; }
+        function upd() {
+          var L = +lon.value, mins = Math.round(720 + L * 4), h = ((Math.floor(mins / 60) % 24) + 24) % 24, m = ((mins % 60) + 60) % 60, h12 = h % 12 || 12;
+          el.querySelector("#lonv").textContent = L === 0 ? "0° (ग्रिनिच)" : Math.abs(L) + "° " + (L > 0 ? "पूर्व" : "पश्चिम");
+          el.querySelector("#loc").innerHTML = "यहाँ<b>" + h12 + ":" + (m < 10 ? "0" : "") + m + "</b>" + part(h) + " " + (h >= 6 && h < 18 ? "☀️" : "🌙");
+          var hrs = Math.abs(L) / 15;
+          el.querySelector("#why").textContent = L === 0 ? "यही 0° रेखा है, यहीं से गिनती शुरू।" :
+            Math.abs(L) + "° ÷ 15 = " + (Math.round(hrs * 100) / 100) + " घंटे " + (L > 0 ? "आगे (पूर्व में जोड़ो)" : "पीछे (पश्चिम में घटाओ)") + (L === 82.5 ? "। भारत का मानक समय: 5 घंटे 30 मिनट आगे।" : "");
+          unlock();
+        }
+        lon.oninput = upd;
+        $$("#pl button", el).forEach(function (b) { b.onclick = function () { lon.value = b.getAttribute("data-l"); upd(); }; });
+        upd();
+      }
+    }
+  };
+
+  /* ---------------- router ---------------- */
+  function route() {
+    stopSpeak(); app.ontouchstart = app.ontouchend = null;
+    var h = location.hash.replace(/^#\/?/, "").split("/");
+    if (h[0] !== "ch") return home();
+    var n = +h[1], v = h[2] || "learn";
+    if (v === "learn") return learn(n);
+    if (v === "intro") return intro(n);
+    if (v === "story") return story(n);
+    if (v === "c") return concept(n, h[3]);
+    if (v === "quiz") return finalQuiz(n);
+    if (v === "class") return h[3] ? classOne(n, h[3]) : classList(n);
+    if (v === "play") return h[3] === "tf" ? playTF(n) : h[3] === "words" ? playWords(n) : h[3] === "riddles" ? playRiddles(n) : playList(n);
+    if (v === "practice") return practice(n);
+    home();
+  }
+  window.addEventListener("hashchange", function () { route(); window.scrollTo(0, 0); });
+  route();
+  if ("serviceWorker" in navigator) window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js").catch(function () {}); });
+})();
