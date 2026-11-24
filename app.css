@@ -150,3 +150,22 @@ input[type=range]{width:100%;height:36px;accent-color:var(--brand)}
 .pool button.used{display:none}
 .shake{animation:sh .4s}
 @keyframes sh{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+
+/* chapter flows */
+.mapcard{margin:4px 16px 14px;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px 12px 4px}
+.mapcard .h{font-weight:800;font-size:18px}
+.flbox{background:#fff;border-radius:14px;margin:8px 0 12px}
+.flbox svg{width:100%;height:auto;display:block}
+.flbox.big{border:1px solid var(--line);padding:6px}
+.fnode{cursor:pointer}
+.fnode:active rect{opacity:.7}
+.legend{display:flex;flex-wrap:wrap;gap:8px;font-size:14px;margin-bottom:12px}
+.legend .lg{border-radius:10px;padding:2px 10px;border:2px solid}
+.legend .r{background:#e8590c;color:#fff;border-color:#e8590c}.legend .g{background:#1b2a3a;color:#fff;border-color:#1b2a3a}
+.legend .c{border-color:#f08c3a}.legend .d{background:#e3f6e8;border-color:#2b8a3e}
+table.cmp{width:100%;border-collapse:separate;border-spacing:0 8px;font-size:17px;margin:4px 0 12px}
+table.cmp thead th{background:var(--brand);color:#fff;padding:8px;font-size:17px}
+table.cmp thead th:first-child{background:transparent}
+table.cmp thead th:nth-child(2){border-radius:12px 0 0 12px}table.cmp thead th:last-child{border-radius:0 12px 12px 0;background:#1c7ed6}
+table.cmp tbody th{font-size:13px;color:var(--muted);text-align:left;padding:8px 6px 8px 0;vertical-align:top;width:18%}
+table.cmp td{background:#fff;border:1px solid var(--line);padding:10px;vertical-align:top;line-height:1.45}

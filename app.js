@@ -100,6 +100,8 @@
       var d = chProgress(c);
       var html = top("पाठ " + c.no + ": " + c.title, "#/") +
         '<div class="chead"><div class="one">' + esc(c.oneLine) + '</div><div class="small" style="margin-top:6px">✅ ' + d + " / " + c.concepts.length + " बातें समझ लीं</div></div>" +
+        (c.map ? '<div class="mapcard"><div class="h">🗺️ पूरा पाठ एक नज़र में</div><div class="small">किसी डिब्बे को दबाइए, वही बात खुलेगी</div><div class="flbox">' +
+          flowSVG(c.map, n, true) + '</div><a class="btn soft" href="#/ch/' + n + '/map">🔍 बड़ा करके देखिए</a></div>' : "") +
         '<div class="path">' +
         stone("#/ch/" + n + "/intro", "🎯", "यह पाठ क्यों?", "1 मिनट: पाठ एक नज़र में", st.done[n + ":intro"]) +
         stone("#/ch/" + n + "/story", "📖", c.story.title, "शुरुआत की कहानी", st.done[n + ":story"]);
@@ -254,6 +256,7 @@
       var sc = [];
       sc.push({ html: '<div class="kicker">बात ' + (idx + 1) + " / " + c.concepts.length + "</div><h2>" + k.emoji + " " + esc(k.name) + "</h2>" +
         (k.art ? '<div class="art">' + k.art + "</div>" : pcard(k)) + '<p class="lead">' + nl(k.simple) + "</p>", say: k.name + "। " + k.simple });
+      (k.flows || []).forEach(function (it) { sc.push(flowScreen(it, n)); });
       var W = typeof k.widget === "string" ? WIDGETS[k.widget] : k.widget ? dataWidget(k.widget) : null;
       if (W) sc.push({ html: '<div class="kicker">खुद करके देखिए</div>' + W.html, say: W.say, onShow: W.init });
       if (k.like) sc.push({ html: '<div class="kicker">ऐसे समझिए</div><div class="box blue"><div class="h">🤝 जैसे…</div>' + nl(k.like) + "</div>" +
@@ -291,6 +294,69 @@
           '<a class="btn soft" href="#/ch/' + n + '/learn">पाठ पर वापस</a>';
       } });
       player("अंतिम परीक्षा", "#/ch/" + n + "/learn", sc, function () { go("#/ch/" + n + "/learn"); });
+    });
+  }
+
+  /* ---------------- chapter flows: map, types, process (boxes in rows) and compare (table) ---------------- */
+  function flowSVG(g, n, interactive) {
+    var W = 360, ROWH = 80, TOP = 8, rows = {}, maxRow = 0;
+    g.nodes.forEach(function (d) { (rows[d.row] = rows[d.row] || []).push(d); if (d.row > maxRow) maxRow = d.row; });
+    var pos = {};
+    g.nodes.forEach(function (d) {
+      var cnt = rows[d.row].length, w = cnt === 1 ? 250 : cnt === 2 ? 150 : cnt === 3 ? 108 : 82, h = d.s ? 50 : 40;
+      var fx = d.x == null ? 0.5 : d.x, room = Math.min(fx, 1 - fx) * 2 * W - 8;  // never wider than the space around it
+      rows[d.row].forEach(function (o) { if (o !== d) room = Math.min(room, Math.abs((o.x == null ? 0.5 : o.x) - fx) * W - 8); });
+      w = Math.max(70, Math.min(w, room));
+      var cx = fx * W, cy = TOP + d.row * ROWH + 26;
+      pos[d.id] = { x: cx - w / 2, y: cy - h / 2, w: w, h: h, cx: cx, cy: cy };
+    });
+    var H = TOP + (maxRow + 1) * ROWH, out = '<svg class="fl" viewBox="0 0 ' + W + " " + H + '" xmlns="http://www.w3.org/2000/svg">' +
+      '<defs><marker id="fa" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#adb5bd"/></marker></defs>';
+    (g.edges || []).forEach(function (e) {
+      var a = pos[e[0]], b = pos[e[1]]; if (!a || !b) return;
+      var y1 = a.y + a.h, y2 = b.y - 2, mid = Math.max(y1 + 8, y2 - 14);
+      out += '<path d="M' + a.cx + "," + y1 + " V" + mid + " H" + b.cx + " V" + y2 + '" fill="none" stroke="#adb5bd" stroke-width="2" marker-end="url(#fa)"/>';
+    });
+    g.nodes.forEach(function (d) {
+      var p = pos[d.id], done = d.c && st.done[n + ":" + d.c];
+      var fill = d.root ? "#e8590c" : d.group ? "#1b2a3a" : done ? "#e3f6e8" : "#fff";
+      var stroke = d.root ? "#e8590c" : d.group ? "#1b2a3a" : done ? "#2b8a3e" : d.c ? "#f08c3a" : "#adb5bd";
+      var ink = d.root || d.group ? "#fff" : "#1b2a3a", sub = d.root || d.group ? "#ffe8d6" : "#5b6b7b";
+      var lines = wrapLabel(d.t, p.w), ty = p.cy - (d.s ? 6 : 0) - (lines.length - 1) * 7 + 5;
+      var g0 = d.c && interactive ? '<g class="fnode" data-go="#/ch/' + n + "/c/" + d.c + '">' : "<g>";
+      out += g0 + '<rect x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + (p.h + (lines.length - 1) * 13) + '" rx="12" fill="' + fill + '" stroke="' + stroke +
+        '" stroke-width="2"' + (d.note ? ' stroke-dasharray="5 4"' : "") + "/>";
+      lines.forEach(function (l, i) { out += '<text x="' + p.cx + '" y="' + (ty + i * 14) + '" text-anchor="middle" font-size="13.5" font-weight="700" fill="' + ink + '">' + esc(l) + "</text>"; });
+      if (d.s) out += '<text x="' + p.cx + '" y="' + (ty + (lines.length - 1) * 14 + 16) + '" text-anchor="middle" font-size="11" fill="' + sub + '">' + esc(d.s) + "</text>";
+      if (done) out += '<text x="' + (p.x + p.w - 10) + '" y="' + (p.y + 13) + '" text-anchor="middle" font-size="11">✅</text>';
+      out += "</g>";
+    });
+    return out + "</svg>";
+  }
+  function wrapLabel(t, w) {
+    if (t.length * 7.4 <= w - 10 || t.indexOf(" ") < 0) return [t];
+    var words = t.split(" "), a = "", b = "";
+    words.forEach(function (x) { if ((a + " " + x).trim().length * 7.4 <= w - 10 && !b) a = (a + " " + x).trim(); else b = (b + " " + x).trim(); });
+    return b ? [a, b] : [a];
+  }
+  function compareHTML(it) {
+    return '<table class="cmp"><thead><tr><th></th><th>' + esc(it.left) + "</th><th>" + esc(it.right) + "</th></tr></thead><tbody>" +
+      it.rows.map(function (r) { return "<tr><th>" + esc(r[0]) + "</th><td>" + esc(r[1]) + "</td><td>" + esc(r[2]) + "</td></tr>"; }).join("") + "</tbody></table>";
+  }
+  function flowSay(it) {
+    if (it.kind === "compare") return it.title + "। " + it.rows.map(function (r) { return r[0] + ": " + it.left + " में " + r[1] + ", " + it.right + " में " + r[2]; }).join("। ");
+    return it.title + "। " + it.nodes.map(function (d) { return d.t + (d.s ? " " + d.s : ""); }).join(", ");
+  }
+  function flowScreen(it, n) {
+    var kick = { types: "प्रकार, एक नज़र में", process: "कैसे होता है, एक नज़र में", compare: "फ़र्क, एक नज़र में" }[it.kind] || "एक नज़र में";
+    return { html: '<div class="kicker">' + kick + "</div><h2>" + esc(it.title) + "</h2>" +
+      (it.kind === "compare" ? compareHTML(it) : '<div class="flbox">' + flowSVG(it, n, false) + "</div>"), say: flowSay(it) };
+  }
+  function mapPage(n) {
+    chapter(n).then(function (c) {
+      if (!c.map) return go("#/ch/" + n + "/learn");
+      app.innerHTML = top("पाठ " + n + ": नक्शा", "#/ch/" + n + "/learn") + '<div class="pad"><p class="small">किसी डिब्बे को दबाइए, वही बात खुलेगी। ✅ = समझ ली।</p><div class="flbox big">' +
+        flowSVG(c.map, n, true) + '</div><div class="legend"><span class="lg r">पाठ</span><span class="lg g">हिस्सा</span><span class="lg c">बात (दबाइए)</span><span class="lg d">समझ ली</span></div></div>' + tabs(n, "learn");
     });
   }
 
@@ -466,6 +532,7 @@
     if (h[0] !== "ch") return home();
     var n = +h[1], v = h[2] || "learn";
     if (v === "learn") return learn(n);
+    if (v === "map") return mapPage(n);
     if (v === "intro") return intro(n);
     if (v === "story") return story(n);
     if (v === "c") return concept(n, h[3]);
