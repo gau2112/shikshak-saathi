@@ -47,6 +47,7 @@
   function getJSON(u) { return fetch(u).then(function (r) { if (!r.ok) throw new Error(u); return r.json(); }); }
   function book() { return BOOK ? Promise.resolve(BOOK) : getJSON("data/book.json").then(function (b) { BOOK = b; return b; }); }
   function chapter(n) { return CH[n] ? Promise.resolve(CH[n]) : getJSON("data/ch" + (n < 10 ? "0" : "") + n + ".json").then(function (c) { CH[n] = c; return c; }); }
+  function doneCount(n) { var d = 0; Object.keys(st.done).forEach(function (k) { if (k.indexOf(n + ":c") === 0) d++; }); return d; }
   function chProgress(c) { var d = 0; c.concepts.forEach(function (k) { if (st.done[c.no + ":" + k.id]) d++; }); return d; }
 
   /* ---------------- shell pieces ---------------- */
@@ -71,11 +72,13 @@
         'आपका नाम?<div class="namebox"><input id="nm" placeholder="जैसे: सुनीता" maxlength="30"><button id="nmok">ठीक</button></div>';
       var html = top("शिक्षक साथी") +
         '<div class="hero"><h2>कक्षा 6 · सामाजिक विज्ञान</h2><p>' + esc(b.title) + '</p><div class="hi">' + hi + "</div></div>" +
-        '<div class="sec-h">पाठ चुनिए</div>';
-      Promise.all(b.chapters.filter(function (c) { return c.live; }).map(function (c) { return chapter(c.no); })).then(function () {
+        '';
+      (function () {
+        var lastPart = null;
         b.chapters.forEach(function (c) {
+          if (c.part && c.part !== lastPart) { lastPart = c.part; html += '<div class="sec-h">' + esc(c.part) + "</div>"; }
           if (c.live) {
-            var d = chProgress(CH[c.no]), tot = CH[c.no].concepts.length;
+            var d = doneCount(c.no), tot = c.concepts || 1;
             html += '<button class="chap" data-go="#/ch/' + c.no + '/learn"><div class="no">' + c.no + '</div><div style="flex:1"><div class="t">' + esc(c.title) +
               '</div><div class="s">' + esc(c.oneLine) + '</div><div class="bar"><i style="width:' + Math.round(100 * d / tot) + '%"></i></div></div></button>';
           } else {
@@ -87,7 +90,7 @@
         app.innerHTML = html;
         var ok = $("#nmok");
         if (ok) ok.onclick = function () { var v = $("#nm").value.trim(); if (v) { st.name = v; save(); home(); } };
-      });
+      })();
     });
   }
 
@@ -108,6 +111,64 @@
       app.innerHTML = html + tabs(n, "learn");
     });
   }
+  function pcard(k) {
+    return '<div class="pcard"><div class="pe">' + k.emoji + '</div><div class="pk">' + (k.keys || []).map(function (w) { return "<span>" + esc(w) + "</span>"; }).join("") + "</div></div>";
+  }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  /* data-driven activities from the chapter file: "sort" (right basket) and "order" (tap in order) */
+  function dataWidget(w) {
+    if (w.type === "sort") return {
+      say: w.title + "। हर बात को सही टोकरी में डालिए।",
+      html: "<h2>🧺 " + esc(w.title) + '</h2><div class="wg"><div class="small" style="text-align:center">यह बात किस टोकरी में जाएगी?</div><div class="sortcard" id="it"></div>' +
+        '<div class="baskets">' + w.baskets.map(function (b, i) { return '<button data-b="' + i + '">' + esc(b) + "</button>"; }).join("") +
+        '</div><div class="fb" id="fb"></div><div class="small" id="cnt" style="text-align:center"></div></div>',
+      init: function (el, unlock) {
+        var items = shuffle(w.items), i = 0, sc = 0, busy = false;
+        function show() {
+          el.querySelector("#it").textContent = items[i].t; el.querySelector("#cnt").textContent = (i + 1) + " / " + items.length; el.querySelector("#fb").textContent = "";
+          $$(".baskets button", el).forEach(function (b) { b.className = ""; }); busy = false;
+        }
+        $$(".baskets button", el).forEach(function (b) {
+          b.onclick = function () {
+            if (busy) return; busy = true;
+            var ok = +b.getAttribute("data-b") === items[i].b; if (ok) sc++;
+            b.className = ok ? "right" : "wrong";
+            if (!ok) el.querySelector('.baskets button[data-b="' + items[i].b + '"]').className = "right";
+            el.querySelector("#fb").textContent = ok ? "✅ सही टोकरी!" : "❌ यह " + w.baskets[items[i].b] + " में जाएगी";
+            setTimeout(function () {
+              i++;
+              if (i < items.length) show();
+              else { el.querySelector("#it").textContent = "🎉 " + items.length + " में से " + sc + " सही!"; el.querySelector("#cnt").textContent = ""; unlock(); }
+            }, 1100);
+          };
+        });
+        show();
+      }
+    };
+    if (w.type === "order") return {
+      say: w.title + "। " + w.hint,
+      html: "<h2>🔢 " + esc(w.title) + '</h2><div class="wg"><p class="small">' + esc(w.hint) + '</p><div class="placed" id="pl"></div><div class="pool" id="po"></div><div class="fb" id="fb"></div></div>',
+      init: function (el, unlock) {
+        var next = 0, miss = 0;
+        el.querySelector("#po").innerHTML = shuffle(w.items).map(function (t) { return '<button data-t="' + esc(t) + '">' + esc(t) + "</button>"; }).join("");
+        $$("#po button", el).forEach(function (b) {
+          b.onclick = function () {
+            if (b.getAttribute("data-t") === w.items[next]) {
+              next++; b.classList.add("used");
+              el.querySelector("#pl").insertAdjacentHTML("beforeend", "<div><b>" + next + ".</b> " + esc(w.items[next - 1]) + "</div>");
+              el.querySelector("#fb").textContent = "✅";
+              if (next === w.items.length) { el.querySelector("#fb").textContent = miss ? "🎉 पूरा! (" + miss + " बार चूके)" : "🎉 एक बार में बिल्कुल सही!"; unlock(); }
+            } else {
+              miss++; b.classList.add("shake"); el.querySelector("#fb").textContent = "❌ अभी यह नहीं। पहले कौन आएगा?";
+              setTimeout(function () { b.classList.toggle("shake", false); }, 450);
+            }
+          };
+        });
+      }
+    };
+    return null;
+  }
+
   function stone(href, em, t, s, done, cls) {
     return '<button class="stone ' + (done ? "done " : "") + (cls || "") + '" data-go="' + href + '"><span class="em">' + em + '</span><span><div class="t">' + esc(t) +
       '</div><div class="s">' + esc(s) + '</div></span><span class="ck">' + (done ? "✅" : "›") + "</span></button>";
@@ -192,8 +253,9 @@
       if (!k) return go("#/ch/" + n + "/learn");
       var sc = [];
       sc.push({ html: '<div class="kicker">बात ' + (idx + 1) + " / " + c.concepts.length + "</div><h2>" + k.emoji + " " + esc(k.name) + "</h2>" +
-        (k.art ? '<div class="art">' + k.art + "</div>" : "") + '<p class="lead">' + nl(k.simple) + "</p>", say: k.name + "। " + k.simple });
-      if (k.widget && WIDGETS[k.widget]) sc.push({ html: '<div class="kicker">खुद करके देखिए</div>' + WIDGETS[k.widget].html, say: WIDGETS[k.widget].say, onShow: WIDGETS[k.widget].init });
+        (k.art ? '<div class="art">' + k.art + "</div>" : pcard(k)) + '<p class="lead">' + nl(k.simple) + "</p>", say: k.name + "। " + k.simple });
+      var W = typeof k.widget === "string" ? WIDGETS[k.widget] : k.widget ? dataWidget(k.widget) : null;
+      if (W) sc.push({ html: '<div class="kicker">खुद करके देखिए</div>' + W.html, say: W.say, onShow: W.init });
       if (k.like) sc.push({ html: '<div class="kicker">ऐसे समझिए</div><div class="box blue"><div class="h">🤝 जैसे…</div>' + nl(k.like) + "</div>" +
         (k.careful ? '<div class="box gold"><div class="h">⚠️ पर ध्यान दें</div>' + nl(k.careful) + "</div>" : "") +
         (k.life ? '<div class="box"><div class="h">🏡 रोज़ की ज़िंदगी से</div>' + nl(k.life) + "</div>" : ""), say: [k.like, k.careful, k.life].join("। ") });

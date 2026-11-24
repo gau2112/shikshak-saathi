@@ -4,5 +4,5 @@ A phone-first learning app for teachers (and children): Class 6 Social Science i
 
 Open: https://gau2112.github.io/shikshak-saathi/ — in Chrome use ⋮ → "Add to Home screen"; works offline after the first open.
 
-No backend: progress is stored only on the user's phone. Pilot: Chapter 1 (पृथ्वी पर स्थानों की स्थिति). Pictures are simple drawings made for this app, not textbook images.
+No backend: progress is stored only on the user's phone. All 15 chapters of Class 6 (समाज का अध्ययन : भारत और उसके आगे), 141 concepts, 12 hands-on activities. Pictures are simple drawings made for this app, not textbook images.
 Built from the lesson data in the Shikshak Saathi project (phone-app/build.py).

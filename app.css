@@ -133,3 +133,20 @@ input[type=range]{width:100%;height:36px;accent-color:var(--brand)}
 .namebox{display:flex;gap:8px;margin-top:10px}
 .namebox input{flex:1;font:inherit;padding:10px 12px;border-radius:12px;border:0}
 .namebox button{border:0;border-radius:12px;padding:0 14px;background:#fff;color:var(--brand);font-weight:800}
+
+/* picture card (when a concept has no drawing) and v2 activities */
+.pcard{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#fff,#fff3e0);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:0 0 14px}
+.pcard .pe{flex:none;width:86px;height:86px;border-radius:50%;background:var(--brand-soft);display:grid;place-items:center;font-size:48px}
+.pcard .pk{display:flex;flex-wrap:wrap;gap:8px}
+.pcard .pk span{background:#fff;border:2px solid #f5c48c;color:#8a3b0a;border-radius:20px;padding:4px 12px;font-weight:700;font-size:17px}
+.sortcard{font-size:22px;font-weight:800;text-align:center;background:#fff6dc;border:2px dashed #f0c44a;border-radius:16px;padding:18px 10px;margin:8px 0 12px;min-height:70px}
+.baskets{display:flex;flex-wrap:wrap;gap:8px}
+.baskets button{flex:1 1 30%;min-height:56px;border:2px solid var(--line);background:#fff;border-radius:14px;font-size:17px;font-weight:700;padding:8px}
+.baskets button.right{background:var(--ok-soft);border-color:var(--ok)}
+.baskets button.wrong{background:var(--bad-soft);border-color:var(--bad)}
+.placed div{background:var(--ok-soft);border-radius:12px;padding:8px 12px;margin:0 0 6px;font-weight:700}
+.pool{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.pool button{border:2px solid var(--line);background:#fff;border-radius:14px;padding:10px 14px;font-size:18px;font-weight:700}
+.pool button.used{display:none}
+.shake{animation:sh .4s}
+@keyframes sh{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
