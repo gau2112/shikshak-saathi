@@ -322,22 +322,42 @@
       var fill = d.root ? "#e8590c" : d.group ? "#1b2a3a" : done ? "#e3f6e8" : "#fff";
       var stroke = d.root ? "#e8590c" : d.group ? "#1b2a3a" : done ? "#2b8a3e" : d.c ? "#f08c3a" : "#adb5bd";
       var ink = d.root || d.group ? "#fff" : "#1b2a3a", sub = d.root || d.group ? "#ffe8d6" : "#5b6b7b";
-      var lines = wrapLabel(d.t, p.w), ty = p.cy - (d.s ? 6 : 0) - (lines.length - 1) * 7 + 5;
+      var room = p.w - 12, tf = fitLabel(d.t, room), lines = tf.lines, fs = tf.size;
+      var ss = d.s ? fitSize(d.s, room, 11, 8.5, false) : 0, lh = fs + 1.5;
+      var H = p.h + (lines.length - 1) * 17, blockH = lines.length * lh + (d.s ? ss + 4 : 0);
+      var ty = p.y + H / 2 - blockH / 2 + fs * 0.85;
       var g0 = d.c && interactive ? '<g class="fnode" data-go="#/ch/' + n + "/c/" + d.c + '">' : "<g>";
-      out += g0 + '<rect x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + (p.h + (lines.length - 1) * 13) + '" rx="12" fill="' + fill + '" stroke="' + stroke +
+      out += g0 + '<rect x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + H + '" rx="12" fill="' + fill + '" stroke="' + stroke +
         '" stroke-width="2"' + (d.note ? ' stroke-dasharray="5 4"' : "") + "/>";
-      lines.forEach(function (l, i) { out += '<text x="' + p.cx + '" y="' + (ty + i * 14) + '" text-anchor="middle" font-size="13.5" font-weight="700" fill="' + ink + '">' + esc(l) + "</text>"; });
-      if (d.s) out += '<text x="' + p.cx + '" y="' + (ty + (lines.length - 1) * 14 + 16) + '" text-anchor="middle" font-size="11" fill="' + sub + '">' + esc(d.s) + "</text>";
+      lines.forEach(function (l, i) { out += '<text x="' + p.cx + '" y="' + (ty + i * lh) + '" text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="' + ink + '">' + esc(l) + "</text>"; });
+      if (d.s) out += '<text x="' + p.cx + '" y="' + (ty + (lines.length - 1) * lh + ss + 4) + '" text-anchor="middle" font-size="' + ss + '" fill="' + sub + '">' + esc(d.s) + "</text>";
       if (done) out += '<text x="' + (p.x + p.w - 10) + '" y="' + (p.y + 13) + '" text-anchor="middle" font-size="11">✅</text>';
       out += "</g>";
     });
     return out + "</svg>";
   }
-  function wrapLabel(t, w) {
-    if (t.length * 7.4 <= w - 10 || t.indexOf(" ") < 0) return [t];
-    var words = t.split(" "), a = "", b = "";
-    words.forEach(function (x) { if ((a + " " + x).trim().length * 7.4 <= w - 10 && !b) a = (a + " " + x).trim(); else b = (b + " " + x).trim(); });
-    return b ? [a, b] : [a];
+  /* Box text: measure the real Hindi width (canvas), shrink the font to fit; wrap to 2 lines only if one line would be too small. */
+  var measureCtx = null;
+  function textW(t, size, bold) {
+    if (!measureCtx) { try { measureCtx = document.createElement("canvas").getContext("2d"); } catch (e) { measureCtx = false; } }
+    if (!measureCtx) return t.length * size * 0.55;
+    measureCtx.font = (bold ? "700 " : "400 ") + size + "px " + (getComputedStyle(document.body).fontFamily || "sans-serif");
+    return measureCtx.measureText(t).width;
+  }
+  function fitSize(t, room, base, min, bold) {
+    var w = textW(t, base, bold); if (w <= room) return base;
+    return Math.max(min, Math.floor(base * room / w * 10) / 10);
+  }
+  function fitLabel(t, room) {
+    var one = fitSize(t, room, 13.5, 11.5, true);
+    if (textW(t, one, true) <= room || t.indexOf(" ") < 0) return { lines: [t], size: fitSize(t, room, 13.5, 9.5, true) };
+    var words = t.split(" "), best = null;
+    for (var i = 1; i < words.length; i++) {
+      var a = words.slice(0, i).join(" "), b = words.slice(i).join(" "), m = Math.max(textW(a, 13.5, true), textW(b, 13.5, true));
+      if (!best || m < best.m) best = { a: a, b: b, m: m };
+    }
+    var size = Math.max(9.5, Math.min(13.5, Math.floor(13.5 * room / best.m * 10) / 10));
+    return { lines: [best.a, best.b], size: size };
   }
   function compareHTML(it) {
     return '<table class="cmp"><thead><tr><th></th><th>' + esc(it.left) + "</th><th>" + esc(it.right) + "</th></tr></thead><tbody>" +
